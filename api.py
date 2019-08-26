@@ -24,7 +24,7 @@ class ID(object):
 def Get(change_id=None):
     url = 'http://api.pathofexile.com/public-stash-tabs'
     if change_id:
-        url += '?id=' + change_id
+        url += '?id=%s' % change_id
     page = requests.get(url)
     return json.loads(page.content)
 
