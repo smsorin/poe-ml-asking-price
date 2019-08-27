@@ -1,3 +1,5 @@
 __pycache__/*
 *.swp
 stashes-*
+next_change_id
+*.pickle
