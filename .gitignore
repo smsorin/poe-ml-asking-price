@@ -3,3 +3,7 @@ __pycache__/*
 stashes-*
 next_change_id
 *.pickle
+bool_mods-dict.txt
+names-dict.txt
+scaled_mods-dict.txt
+examples.rio

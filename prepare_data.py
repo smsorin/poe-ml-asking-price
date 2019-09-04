@@ -53,10 +53,9 @@ def main():
     with open('priced_items.pickle', 'wb') as out_file:
         for stash in Stashes(files):
             if stash['league'] != 'Legion': continue
-            for item in stash:
+            for item in stash['items']:
                 if 'note' not in item or '~price ' not in item['note']: continue
-                pickle.dump(item, out_file)
-                
+                pickle.dump(item, out_file)                
 
 if __name__ == '__main__':
     main()
