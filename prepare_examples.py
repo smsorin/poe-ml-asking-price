@@ -83,36 +83,36 @@ def main():
                 1 if item.get('corrupted', False) else 0)
             e.features.feature['num_sockets'].int64_list.value.append(
                 len(item.get('sockets', [])))
-            
-            for mod in itertools.chain(item.get('implicitMods', []),
-                                       item.get('explicitMods', []),
-                                       item.get('enchantMods', []),
-                                       item.get('craftedMods', [])):                
-                scaled_mods = GetScaledMods(mod)
-                if not scaled_mods:
-                    e.features.feature['bool_mods'].bytes_list.value.append(mod.encode('utf-8'))
-                    if mod in bool_mods: continue
-                    print(mod, flush=True)
-                    bool_mods.add(mod)                    
-                    continue
-                for k, v in scaled_mods:
-                    if k == 'to':
-                        print(mod)
-                        return
-                    UpdateMod(mods, k, v)
-                    e.features.feature['scaled_mods_name'].bytes_list.value.append(k.encode('utf-8'))
-                    e.features.feature['scaled_mods_value'].float_list.value.append(v)
-                    
+            for source in ['implicitMods', 'explicitMods', 'enchantMods', 'craftedMods']:
+                for mod in item.get(source, []):
+                    scaled_mods = GetScaledMods(mod)
+                    if not scaled_mods:
+                        e.features.feature['bool_mods'].bytes_list.value.append(
+                            mod.encode('utf-8'))
+                        e.features.feature['bool_mods_source'].bytes_list.value.append(
+                            source.encode('utf-8'))
+                        bool_mods.add(mod)                    
+                        continue
+                    for k, v in scaled_mods:
+                        UpdateMod(mods, k, v)
+                        e.features.feature['scaled_mods_name'].bytes_list.value.append(k.encode('utf-8'))
+                        e.features.feature['scaled_mods_value'].float_list.value.append(v)
+                        e.features.feature['scaled_mods_source'].bytes_list.value.append(
+                            source.encode('utf-8'))
+            category = ','.join(['%s - %s' % (x,y)
+                          for x,y in item['category'].items()])
+            e.features.feature['category'].bytes_list.value.append(
+                (category).encode('utf-8'))
+            categories.add(category)
             counters['good_items'] += 1
             selected_examples.append(e)
-            for x,y in item['category'].items():
-                categories.add('%s - %s' % (x,y))
+
     except KeyboardInterrupt:
         print('Stoped reading the items for debug purposes.')
         print('Interrupt again if you really want to quit.')
         print('Continuing with the training on partial data.')
-    return
-    # Rescale the value of the mods to be in [0, 1]
+
+    print('Rescale the value of the mods to be in [0, 1]...', end='', flush=True)
     for e in selected_examples:
         for i, mod in enumerate(e.features.feature['scaled_mods_name'].bytes_list.value):
             mod = str(mod, 'utf-8')
@@ -121,7 +121,7 @@ def main():
             if high == low: high += 1
             scaled_value = (original_value - low) / (high - low)
             e.features.feature['scaled_mods_value'].float_list.value[i] = scaled_value
-            
+    print('Done', flush=True)        
     print('\n\n Scalable mods list:\n')
     print('\n'.join(['%s: %s -> %s' %(k, low, high)
                      for k, (low, high) in sorted(mods.items())]))
@@ -139,7 +139,9 @@ def main():
         f.write(('\n'.join([x for x in sorted(mods.keys()) if x])).encode('utf-8'))
     with open('bool_mods-dict.txt', 'wb') as f:
         f.write(('\n'.join([x for x in sorted(bool_mods)])).encode('utf-8'))
-                
+    with open('categories-dict.txt', 'wb') as f:
+        f.write(('\n'.join([x for x in sorted(categories)])).encode('utf-8'))
+        
     print('Done')
 
 
