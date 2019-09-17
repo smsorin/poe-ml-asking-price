@@ -1,7 +1,8 @@
 import tensorflow as tf
 import sys
+import os
 
-BATCH_SIZE=128
+BATCH_SIZE=1024
 
 def input_fn(batch_size=BATCH_SIZE):
     feature_description = {
@@ -26,14 +27,14 @@ def input_fn(batch_size=BATCH_SIZE):
         tf.data.TFRecordDataset('examples.rio')
         .map(lambda x: tf.io.parse_single_example(x, feature_description))
         .map(_PopLabel)
-        .shuffle(1000)
+        .shuffle(30000)
         .repeat()
         .batch(batch_size)
         )    
 
 
 def BuildModEmbeddings(names, values, source):        
-    NUM_NODES_EMBEDDING = [3, 5, 10]
+    NUM_NODES_EMBEDDING = [3, 3]
     # Maximum number of mods per item.
     MAX_MODS = 15
     # Number of different mods in total. +1 for empty mod
@@ -65,6 +66,7 @@ def BuildModEmbeddings(names, values, source):
     mods_raw = tf.expand_dims(mods_raw, 2)
     
     indices = tf.reshape(mod_ids, [-1])
+    all_weights = tf.constant([0.0])
     for i, num_nodes in enumerate(NUM_NODES_EMBEDDING):
         o_shape = mods_raw.shape
         kernel = tf.get_variable('mod_embedding_kernel_%d' % i,
@@ -75,12 +77,16 @@ def BuildModEmbeddings(names, values, source):
                        [-1, o_shape[1], o_shape[-1], num_nodes])
         b = tf.reshape(tf.gather(bias, indices),
                        [-1, o_shape[1], 1, num_nodes])
+        all_weights += (tf.reduce_sum(tf.abs(tf.reshape(k, [-1]))) +
+                        tf.reduce_sum(tf.abs(tf.reshape(b, [-1])))
+                        )
+                        
         mods_raw = tf.nn.relu(tf.matmul(mods_raw, k) + b)
     
     mods_raw = tf.squeeze(mods_raw, axis=2)
 
     result = tf.math.reduce_sum(mods_raw, 1)
-    return result
+    return result, all_weights
     
 
 def model(features, labels, mode):
@@ -105,22 +111,29 @@ def model(features, labels, mode):
             10),
         ]
     simple_inputs = tf.feature_column.input_layer(features, feature_columns)
-    mod_embeddings = BuildModEmbeddings(features['scaled_mods_name'],
+    mod_embeddings, all_weights = BuildModEmbeddings(features['scaled_mods_name'],
                        features['scaled_mods_value'],
                        features['scaled_mods_source'])
     hidden_layer = tf.concat([simple_inputs, mod_embeddings], axis=-1)
 
     for num_nodes in LAYER_CONFIG:
-        hidden_layer =tf.layers.dense(hidden_layer, num_nodes, tf.nn.relu)
+        hidden_layer = tf.layers.dense(hidden_layer, num_nodes, tf.nn.relu)
 
     prediction = tf.layers.dense(hidden_layer, 1, tf.nn.relu)
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode, {'price': prediction})
-    loss = tf.reduce_mean((prediction - labels) ** 2)
+    loss = tf.reduce_mean((prediction - labels) ** 2) + 1e-2 * all_weights
+    tf.summary.scalar('price/mean-square-error', tf.reduce_mean((prediction - labels) ** 2))
+    tf.summary.scalar('price/predicted', tf.reduce_mean(prediction))
+    tf.summary.scalar('price/real', tf.reduce_mean(labels))
     if mode == tf.estimator.ModeKeys.EVAL:
         return tf.estimator.EstimatorSpec(mode, loss=loss)
-    optimizer = tf.train.AdagradOptimizer(learning_rate=1e-3)
-    train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    optimizer = tf.train.AdagradOptimizer(learning_rate=3e-2)
+    #train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+    grads, variables = zip(*optimizer.compute_gradients(loss))
+    grads,  _ = tf.clip_by_global_norm(grads, 5.0)
+    train_op = optimizer.apply_gradients(zip(grads, variables),
+                                         global_step=tf.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 def main():
@@ -137,11 +150,12 @@ def main():
         ]
     
     #estimator = tf.estimator.LinearRegressor(feature_columns=feature_columns)
-    estimator = tf.estimator.Estimator(model_fn=model)
+    estimator = tf.estimator.Estimator(model_fn=model, model_dir='./model')
     train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=500000)
     eval_spec = tf.estimator.EvalSpec(input_fn=input_fn, steps=5000)
     tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
 
 if __name__ == '__main__':
+    #os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     main()

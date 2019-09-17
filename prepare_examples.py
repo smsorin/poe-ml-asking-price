@@ -2,6 +2,7 @@ import sys
 import pickle
 import re
 import itertools
+import random
 import tensorflow as tf
 from collections import defaultdict
 
@@ -130,6 +131,7 @@ def main():
           '\n'.join(['  %20s: %8d' % (k, v) for k,v in counters.items()])) 
     
     print('Dumping examples')
+    random.shuffle(selected_examples)
     with tf.io.TFRecordWriter('examples.rio') as writer:
         for e in selected_examples:
             writer.write(e.SerializeToString())
