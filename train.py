@@ -121,11 +121,18 @@ def model(features, labels, mode):
 
     prediction = tf.layers.dense(hidden_layer, 1, tf.nn.relu)
     if mode == tf.estimator.ModeKeys.PREDICT:
-        return tf.estimator.EstimatorSpec(mode, {'price': prediction})
-    loss = tf.reduce_mean((prediction - labels) ** 2) + 1e-2 * all_weights
-    tf.summary.scalar('price/mean-square-error', tf.reduce_mean((prediction - labels) ** 2))
-    tf.summary.scalar('price/predicted', tf.reduce_mean(prediction))
+        return tf.estimator.EstimatorSpec(mode, {'price': tf.exp(prediction)})
+    log_labels = tf.log(labels)
+    loss = (tf.reduce_mean((prediction - log_labels) ** 2)
+            + 1e-2 * tf.reduce_mean((tf.exp(prediction) - labels)**2)
+            + 1e-3 * all_weights
+            )
+    tf.summary.scalar('price/mean-square-error-log', tf.reduce_mean((prediction - log_labels) ** 2))
+    tf.summary.scalar('price/mean-square-error', tf.reduce_mean((tf.exp(prediction) - labels) ** 2))
+    tf.summary.scalar('price/predicted', tf.reduce_mean(tf.exp(prediction)))
+    tf.summary.scalar('price/log_predicted', tf.reduce_mean(prediction))
     tf.summary.scalar('price/real', tf.reduce_mean(labels))
+    tf.summary.scalar('price/log_real', tf.reduce_mean(log_labels))
     if mode == tf.estimator.ModeKeys.EVAL:
         return tf.estimator.EstimatorSpec(mode, loss=loss)
     optimizer = tf.train.AdagradOptimizer(learning_rate=3e-2)
